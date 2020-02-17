@@ -1,0 +1,434 @@
+---
+title: "ecommerce_review"
+author: "extract_text_from_pdf"
+date: "29/01/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+#### Install the required packages 
+```{r}
+# install.packages("ggthemes")
+# install.packages(qdap)
+# install.packages(dplyr)
+# install.packages(tm)
+# install.packages(wordcloud)
+# install.packages(plotrix)
+# install.packages(dendextend)
+# install.packages(ggplot2)
+# install.packages(ggthemes)
+# install.packages(RWeka)
+# install.packages(reshape2)
+# install.packages(quanteda)
+library(qdap)
+library(dplyr)
+library(tm)
+library(wordcloud)
+library(plotrix)
+library(dendextend)
+library(ggplot2)
+library(ggthemes)
+library(RWeka)
+library(reshape2)
+library(quanteda)
+
+```
+
+## STEP1 — Text extraction & creating a corpus
+
+####  Set the working directory and load the csv files
+```{r}
+setwd("/Users/ingeonhwang/Desktop/1. WBS/1.Study/1. MSBA_term2/Text_Analytics/1. case/ecommerce_review/")
+review=read.csv("ecommerce_review.csv", stringsAsFactors = FALSE)
+names(review)
+
+```
+The argument ‘stringsAsFactors’ is an argument to the ‘data.frame()’ function in R. It is a logical argument that indicates whether strings in a data frame should be treated as factor variables or as just plain strings. For text mining, we typically set it to FALSE so that the characters are treated as strings enabling us to use all the text mining techniques appropriately.
+
+
+#### Text extraction
+```{r}
+# Make a vector source and a corpus
+corpus_review=Corpus(VectorSource(review$Review.Text))
+```
+First, the review.text is converted into a collection of text documents or “Corpus”.(using tm)
+In order to create a corpus using tm, we need to pass a “Source” object as a parameter to the VCorpus method.
+The source object is similar to an abstract input location. The source we use here is a “Vectorsource” which inputs only character vectors. A vector source interprets each element of the vector x as a document.
+
+
+## STEP2 — Text Pre-processing
+
+```{r}
+# Convert to lower case
+corpus_review=tm_map(corpus_review, tolower)
+
+# Remove punctuation
+corpus_review=tm_map(corpus_review, removePunctuation)
+
+#Remove stopwords
+corpus_review=tm_map(corpus_review, removeWords, stopwords("english"))
+
+# Remove context specific stop words
+corpus_review=tm_map(corpus_review, removeWords,c("also", "get","like", "company", "made", "can", "im", "dress", "just", "i"))
+```
+
+```{r}
+## Stem document
+corpus_review=tm_map(corpus_review, stemDocument)
+
+##Viewing the corpus content
+corpus_review[[8]][1]
+```
+The SnowballC package is used for document stemming. In linguistics, stemming is the process of reducing inflected (or derived) words to their word stem, base or root form-generally a written word form.
+
+```{r}
+# Find the 20 most frequent terms: term_count
+term_count <- freq_terms(corpus_review, 20)
+
+# Plot 20 most frequent terms
+plot(term_count)
+```
+The words “Love”, “fit”, “size”, etc are the most frequently used words.
+
+
+## STEP3 — Create the DTM & TDM from the corpus
+
+```{r}
+review_dtm <- DocumentTermMatrix(corpus_review)
+review_tdm <- TermDocumentMatrix(corpus_review)
+```
+The pre-processed and cleaned up corpus is converted into a matrix called the document term matrix.
+
+#### Using the TDM to identify frequent terms
+```{r}
+# Convert TDM to matrix
+review_m <- as.matrix(review_tdm)
+
+# Sum rows and frequency data frame
+review_term_freq <- rowSums(review_m)
+
+# Sort term_frequency in descending order
+review_term_freq <- sort(review_term_freq, decreasing = T)
+
+# View the top 10 most common words
+review_term_freq[1:10]
+```
+
+
+## STEP4 — Exploratory text analysis
+
+```{r}
+# Plot a barchart of the 20 most common words
+barplot(review_term_freq[1:20], col = "steel blue", las = 2)
+```
+
+#### Word clouds
+```{r}
+review_word_freq <- data.frame(term = names(review_term_freq),
+  num = review_term_freq)
+
+# Create a wordcloud for the values in word_freqs
+wordcloud(review_word_freq$term, review_word_freq$num,
+  max.words = 50, colors = "red")
+```
+
+```{r}
+# Print the word cloud with the specified colors
+wordcloud(review_word_freq$term, review_word_freq$num,
+  max.words = 50, colors = c("aquamarine","darkgoldenrod","tomato"))
+```
+
+
+#### Comparison of corpus
+
+
+```{r}
+# Word clouds for comparison
+
+## spliting dataset in Reccomendion in Yes & No
+(review_yes <- review[review$Recommended.IND == 1, ])
+(review_no <- review[review$Recommended.IND == 0, ])
+
+## Combine both corpora: all reviews
+all_yes <- paste(review_yes, collapse = "")
+all_no <- paste(review_no, collapse = "")
+all_combine <- c(all_yes, all_no)
+
+## Creating corpus for combination
+corpus_review_all=Corpus(VectorSource(all_combine)) 
+
+# Pre-processing corpus - all
+##Convert to lower-case
+corpus_review_all=tm_map(corpus_review_all, tolower)
+
+##Remove punctuation
+corpus_review_all=tm_map(corpus_review_all, removePunctuation)
+
+##Remove stopwords
+corpus_review_all=tm_map(corpus_review_all, removeWords, stopwords("english"))
+corpus_review_all=tm_map(corpus_review_all, removeWords,c("also", "get","like", "company", "made", "can", "im", "dress","just","i"))
+
+##Stem document
+corpus_review_all=tm_map(corpus_review_all, stemDocument)
+review_tdm_all <- TermDocumentMatrix(corpus_review_all)
+all_m=as.matrix(review_tdm_all)
+colnames(all_m)=c("Yes","No")
+
+##Sum rows and frequency data frame
+review_term_freq_all <- rowSums(all_m)
+review_word_freq_all <- data.frame(term=names(review_term_freq_all), num = review_term_freq_all)
+
+##Make commonality cloud
+commonality.cloud(all_m, 
+                  colors = "steelblue1",
+                  max.words = 50)
+
+
+# Create comparison cloud
+comparison.cloud(all_m,
+                 colors = c("green", "red"),
+                 max.words = 50)
+```
+One of the main objectives of this study is to analyse the difference in keywords between those who recommend and those who don’t recommend the product. For this purpose, we will create 2 corpora — one for Recommend-yes and another for Recommend-no. The comparison cloud gives a clear contrast of words used by people who are happy with the product compared to those who are not. The people who have not recommended the product have used negative words like disappoint, return, cheap, look etc.
+
+
+
+#### Polarized tag plot
+
+```{r}
+# Identify terms shared by both documents
+common_words <- subset(all_m, all_m[, 1] > 0 & all_m[, 2] > 0)
+
+# calculate common words and difference
+difference <- abs(common_words[, 1] - common_words[, 2])
+common_words <- cbind(common_words, difference)
+common_words <- common_words[order(common_words[, 3],
+                                   decreasing = T), ]
+head(common_words)
+```
+It determines the frequency of a term used in both the corpora under comparison. The difference in frequencies of common words might be insightful in many cases.
+```{r}
+top25_df <- data.frame(x = common_words[1:25, 1],
+                       y = common_words[1:25, 2],
+                       labels = rownames(common_words[1:25, ]))
+# Make pyramid plot
+pyramid.plot(top25_df$x, top25_df$y,
+             labels = top25_df$labels, 
+             main = "Words in Common",
+             gap = 2000,
+             laxlab = NULL,
+             raxlab = NULL, 
+             unit = NULL,
+             top.labels = c("Yes",
+                            "Words",
+                            "No")
+             )
+```
+
+#### Simple word clustering
+```{r}
+review_tdm2 <- removeSparseTerms(review_tdm, sparse = 0.9)
+hc <- hclust(d = dist(review_tdm2, method = "euclidean"), method = "complete")
+
+# Plot a dendrogram
+plot(hc)
+```
+The cluster dendogram shows how certain words are grouped together. Since the clustering is based on the frequency distances, the cluster indicates which set of words are used together most frequently.
+
+#### Word associations
+```{r}
+# Create associations
+associations <- findAssocs(review_tdm, "fit", 0.05)
+
+# Create associations_df
+associations_df <- list_vect2df(associations)[, 2:3]
+
+# Plot the associations_df values 
+ggplot(associations_df, aes(y = associations_df[, 1])) + 
+  geom_point(aes(x = associations_df[, 2]), 
+             data = associations_df, size = 3) + 
+  ggtitle("Word Associations to 'fit'") + 
+  theme_gdocs()
+```
+Word association is a way of calculating the correlation between 2 words in a DTM or TDM. For our corpus, the word association plot indicates correlation between various words and the word “fit”.
+
+#### Use of N-grams
+```{r}
+##Create bi-grams
+review_bigram <- tokens(review$Review.Text) %>%
+    tokens_remove("\\p{P}", valuetype = "regex", padding = TRUE) %>%
+    tokens_remove(stopwords("english"), padding  = TRUE) %>%
+    tokens_ngrams(n = 2) %>%
+    dfm()
+topfeatures(review_bigram)
+```
+
+```{r}
+##Create tri-grams
+review_trigram <- tokens(review$Review.Text) %>%
+    tokens_remove("\\p{P}", valuetype = "regex", padding = TRUE) %>%
+    tokens_remove(stopwords("english"), padding  = TRUE) %>%
+    tokens_ngrams(n = 3) %>%
+    dfm()
+topfeatures(review_trigram)
+```
+
+
+## STEP5 — Feature extraction by removing sparsity
+
+Feature extraction
+```{r}
+## Load the required libraries
+library(irlba)
+library(e1071)
+library(caret)
+library(randomForest)
+library(rpart)
+library(rpart.plot)
+library(ggplot2)
+library(SnowballC)
+library(RColorBrewer)
+library(wordcloud)
+library(biclust)
+library(igraph)
+library(fpc)
+library(Rcampdf)
+library(glmnet)
+
+```
+The exploratory text analysis has given several insights based on the customer reviews. We will now use the same review text as predictor variable to predict whether the product will be recommended by the customer. 
+
+Tokenisation
+```{r}
+# Tokenize descriptions
+reviewtokens=tokens(review$Review.Text,what="word",
+remove_numbers=TRUE,remove_punct=TRUE, remove_symbols=TRUE, remove_hyphens=TRUE)
+
+# Lowercase the tokens
+reviewtokens=tokens_tolower(reviewtokens)
+
+# remove stop words and unnecessary words
+rmwords <- c("dress", "etc", "also", "xxs", "xs", "s")
+reviewtokens=tokens_select(reviewtokens, stopwords(),selection = "remove")
+reviewtokens=tokens_remove(reviewtokens,rmwords)
+
+# Stemming tokens
+reviewtokens=tokens_wordstem(reviewtokens,language = "english")
+reviewtokens=tokens_ngrams(reviewtokens,n=1:2)
+```
+Tokenisation is the process of decomposing text into distinct pieces or tokens. This is what we called as bag-of-words in our previous section. Once toeknisation is done, after all the pre-processing, it is possible to construct a dataframe where each row represents a document and each column represents a distinct token and each cell gives the count of the token for a document. This is the DTM that we learnt in the previous section.
+
+
+```{r}
+# Creating a bag of words
+reviewtokensdfm=dfm(reviewtokens,tolower = FALSE)
+
+# Remove sparsity
+reviewSparse <- convert(reviewtokensdfm, "tm")
+tm::removeSparseTerms(reviewSparse, 0.7)
+
+# Create the dfm
+dfm_trim(reviewtokensdfm, min_docfreq = 0.3)
+x=dfm_trim(reviewtokensdfm, sparsity = 0.98)
+```
+Concept of sparsity : Sparsity is related to the document frequency of a term. Before any classification exercise involving the DTM, it is recommended to treat sparsity.
+
+
+
+## STEP6 — Building the Classification Models
+```{r}
+## Setup a dataframe with features
+df=convert(x,to="data.frame")
+
+##Add the Y variable Recommend.IND
+reviewtokensdf=cbind(review$Recommended.IND,df)
+head(reviewtokensdf)
+
+## Cleanup names
+names(reviewtokensdf)[names(reviewtokensdf) == "review.Recommended.IND"] <- "recommend"
+names(reviewtokensdf)=make.names(names(reviewtokensdf))
+head(reviewtokensdf)
+
+## Remove the original review.text column
+reviewtokensdf=reviewtokensdf[,-c(2)]
+head(reviewtokensdf)
+reviewtokensdf$recommend=factor(reviewtokensdf$recommend)
+```
+
+#### CART model
+```{r}
+## Build the CART model
+tree=rpart(formula = recommend ~ ., data = reviewtokensdf, method="class",control = rpart.control(minsplit = 200,  minbucket = 30, cp = 0.0001))
+printcp(tree)
+plotcp(tree)
+
+##Prune down the tree
+bestcp=tree$cptable[which.min(tree$cptable[,"xerror"]),"CP"]
+bestcp
+ptree=prune(tree,cp=bestcp)
+rpart.plot(ptree,cex = 0.6)
+prp(ptree, faclen = 0, cex = 0.5, extra = 2)
+```
+
+#### Random forest
+```{r}
+library(randomForest)
+reviewRF=randomForest(recommend~., data=reviewtokensdf)
+varImpPlot(reviewRF, cex=.7)
+```
+
+
+#### Lasso logistic regression
+```{r}
+#load required library
+library(glmnet)
+
+#convert training data to matrix format
+x <- model.matrix(recommend~.,reviewtokensdf)
+
+#convert class to numerical variable
+y <- as.numeric(reviewtokensdf$recommend)
+
+#perform grid search to find optimal value of lambda
+cv.out <- cv.glmnet(x, y, alpha=1, family="multinomial", type.measure = "mse" )
+
+#plot result
+plot(cv.out)
+
+#min value of lambda
+lambda_min <- cv.out$lambda.min
+
+#best value of lambda
+lambda_1se <- cv.out$lambda.1se
+lambda_1se
+
+#regression coefficients
+coef=coef(cv.out,s=lambda_1se)
+lassocoef=as.matrix(coef(cv.out,s=lambda_1se))
+write.csv(lassocoef, "lasso_coef.csv")
+```
+Based on the lasso regression we arrive at the lambda_min that we need to use for the logistic regression. An examination of the coefficient matrix will throw light on the feature reduction performed by the lasso. The features which need not be included in the model have a coef of zero.
+
+```{r}
+# Find the best lambda using cross-validation
+set.seed(123) 
+cv.lasso <- cv.glmnet(x, y, alpha = 1, family = "binomial")
+
+# Fit the final model on the dataframe
+review_logreg <- glmnet(x, y, alpha = 1, family = "binomial",
+                lambda = cv.lasso$lambda.min)
+
+# Save the regression coef to a csv file
+logregcoef=as.matrix(coef(review_logreg))
+odds_ratio=as.matrix(exp(coef(review_logreg)))
+write.csv(logregcoef, "logreg_coef.csv")
+write.csv(odds_ratio, "odds_ratio.csv")
+```
+
+
