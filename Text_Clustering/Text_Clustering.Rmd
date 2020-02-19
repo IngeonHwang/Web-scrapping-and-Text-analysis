@@ -1,0 +1,181 @@
+---
+title: "Text_Clustering"
+author: "extract_text_from_pdf"
+date: "19/02/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+Clustering is the task of organizing unlabelled objects in a way that objects in the same group are similar to each other and dissimilar to those in other groups. In other words, clustering is like unsupervised classification where the algorithm models the similarities instead of the boundaries.
+
+## Clustering Basics
+```{r}
+
+```
+To start off, we need to meet three requirements. First of all, we need a distance measure to define whether or not two documents are similar, a criterion function to compute the quality of our clusters and finally an algorithm to optimize this criterion. A distance measure can help us define the proximity of two points in our dataset. It should be large if documents 1 and 2 are similar and small if they differ. The criterion function will inform us when we find the best clusters, and stop the pipeline.
+
+Another approach could be to try to maximize the difference between each cluster of document, instead of their internal similarities.
+
+Finally, we need an algorithm to optimize this criterion function. This algorithm can have several stages. A common way is to use a greedy approach consisting of two steps: initial clustering, and refinement.
+
+The initial phase will select random documents of our corpus and assign them to clusters. Then the refinement phase will iterate over random documents, and compute the criterion function when this document is moved to another cluster. If the score is improved we continue to iterate, if not that means we found the best clusters on the given data.
+
+
+### K-means
+
+K-means is THE go-to clustering algorithm. Fast, available and easy to wrap your head around, it requires you to know the number of clusters your expect. One downside is that K-means tends to assume that your clusters will be simple, due to its partitional approach: it tries to decompose the dataset into non-overlapping subsets. Expect quick results, but with noise.
+
+
+Traditional approaches to text clustering tends to tokenize the documents into its component words using available tools. This leaves us with a lower grain to work with, words instead of whole sentences. Some of those might be pluralized, conjugated or inflected. To cope with that, lemmatization and stemming can be used. *Lemmatisation in linguistics is the process of grouping together the inflected forms of a word so they can be analysed as a single item, identified by the word's lemma.
+
+Once stopwords are removed, the semantic of a sentence depends on the theme (nouns and adjectives) and the action (verbs, auxiliaries and adverbs). Those can be enhanced by adding synonyms, hyponyms and hypernyms, whether with rules or using pre-trained word embeddings. This enrichment step can yield better results, or worsen the noise in your data.. There’s no true or false here, you’ll have to try!
+
+Curse of dimensionality. This phenomenon appears when you work with high-dimensional data, such as text where the size of the vectors is often equal to the size of the vocabulary. Put simply, the more dimensions you have, the more sparse the data will get, and computing the similarity between two points will become incrementally hard.
+
+
+Keep in mind that once you’ve vectorized your data, you’re working with high dimensions, and it’s incredibly hard to understand what’s going on.
+
+
+The goal of dimensionality reduction is to extract the principal information contained inside our data without using everything. PCA (for Principal Component Analysis) does just that.
+
+
+```{r}
+# Creating the empty dataset with the formatted columns 
+dataframe <- data.frame(ID=character(), 
+                      datetime=character(), 
+                      content=character(), 
+                      label=factor()) 
+source.url <- 'https://archive.ics.uci.edu/ml/machine-learning-databases/00438/Health-News-Tweets.zip' 
+target.directory <- '/tmp/clustering-r' 
+temporary.file <- tempfile() 
+download.file(source.url, temporary.file) 
+unzip(temporary.file, exdir = target.directory)
+```
+
+```{r}
+# Reading the files 
+target.directory <- paste(target.directory, 'Health-Tweets', sep = '/') 
+files <- list.files(path = target.directory, pattern='.txt$') 
+
+# Filling the dataframe by reading the text content 
+for (f in files) { 
+  news.filename = paste(target.directory , f, sep ='/') 
+  news.label <- substr(f, 0, nchar(f) - 4) # Removing the 4 last characters => '.txt' 
+  news.data <- read.csv(news.filename, 
+                        encoding = 'UTF-8', 
+                        header = FALSE, 
+                        quote = "", 
+                        sep = '|', 
+                        col.names = c('ID', 'datetime', 'content')) 
+  
+# Trick to handle native split problem (cf. notebook for detail) 
+  news.data <- news.data[news.data$content != "", ] 
+  news.data['label'] = news.label # We add the label of the tweet  
+  
+# Massive data loading memory problem : only loading a few (cf. notebook for detail) 
+  news.data <- head(news.data, floor(nrow(news.data) * 0.05)) 
+  dataframe <- rbind(dataframe, news.data) # Row appending 
+} 
+unlink(target.directory, recursive =  TRUE) # Deleting the temporary directory
+```
+The data frame is the main native class that people use to handle regular datasets. I
+
+
+
+
+
+```{r}
+# To get rid of these URLs, let’s use regex substitutions:
+sentences <- sub("http://([[:alnum:]|[:punct:]])+", '', dataframe$content)
+
+```
+
+```{r}
+# Using a dedicated package. The main reason is that R was not built with NLP at the center of its architecture. Text manipulation is costly in terms of either coding or running or both.
+
+corpus = tm::Corpus(tm::VectorSource(sentences)) 
+ 
+# Cleaning up 
+# Handling UTF-8 encoding problem from the dataset 
+corpus.cleaned <- tm::tm_map(corpus, function(x) iconv(x, to='UTF-8-MAC', sub='byte'))  
+corpus.cleaned <- tm::tm_map(corpus.cleaned, tm::removeWords, tm::stopwords('english')) # Removing stop-words 
+corpus.cleaned <- tm::tm_map(corpus, tm::stemDocument, language = "english") # Stemming the words  
+corpus.cleaned <- tm::tm_map(corpus.cleaned, tm::stripWhitespace) # Trimming excessive whitespaces
+```
+The package that will save our life is tm (stands for text mining). From our resulting sentences, we will create a Corpus object, allowing us to call methods on it to perform stop words cleaning, stemming, whitespaces trimming ,…
+
+```{r}
+corpus = tm::Corpus(tm::VectorSource(sentences)) 
+ 
+# Cleaning up 
+# Handling UTF-8 encoding problem from the dataset 
+corpus.cleaned <- tm::tm_map(corpus, function(x) iconv(x, to='UTF-8-MAC', sub='byte'))  
+corpus.cleaned <- tm::tm_map(corpus.cleaned, tm::removeWords, tm::stopwords('english')) # Removing stop-words 
+corpus.cleaned <- tm::tm_map(corpus, tm::stemDocument, language = "english") # Stemming the words  
+corpus.cleaned <- tm::tm_map(corpus.cleaned, tm::stripWhitespace) # Trimming excessive whitespaces
+```
+
+
+```{r}
+# Sentence representation: TF-IDF and pairwise-distances
+tdm <- tm::DocumentTermMatrix(corpus.cleaned) 
+tdm.tfidf <- tm::weightTfIdf(tdm)
+
+
+tdm.tfidf <- tm::removeSparseTerms(tdm.tfidf, 0.999) 
+tfidf.matrix <- as.matrix(tdm.tfidf) 
+
+# Cosine distance matrix (useful for specific clustering algorithms) 
+dist.matrix = proxy::dist(tfidf.matrix, method = "cosine")
+```
+
+```{r}
+# K-Means
+truth.K <- 16
+
+clustering.kmeans <- kmeans(tfidf.matrix, truth.K) 
+clustering.hierarchical <- hclust(dist.matrix, method = "ward.D2") 
+clustering.dbscan <- dbscan::hdbscan(dist.matrix, minPts = 10)
+```
+
+```{r}
+master.cluster <- clustering.kmeans$cluster 
+slave.hierarchical <- cutree(clustering.hierarchical, k = truth.K) 
+slave.dbscan <- clustering.dbscan$cluster 
+stacked.clustering <- rep(NA, length(master.cluster))  
+names(stacked.clustering) <- 1:length(master.cluster) 
+for (cluster in unique(master.cluster)) { 
+  indexes = which(master.cluster == cluster, arr.ind = TRUE) 
+  slave1.votes <- table(slave.hierarchical[indexes]) 
+  slave1.maxcount <- names(slave1.votes)[which.max(slave1.votes)]   
+  slave1.indexes = which(slave.hierarchical == slave1.maxcount, arr.ind = TRUE) 
+  slave2.votes <- table(slave.dbscan[indexes]) 
+  slave2.maxcount <- names(slave2.votes)[which.max(slave2.votes)]   
+  stacked.clustering[indexes] <- slave2.maxcount 
+}
+```
+
+```{r}
+points <- cmdscale(dist.matrix, k = 2) 
+palette <- colorspace::diverge_hcl(truth.K) # Creating a color palette 
+previous.par <- par(mfrow=c(2,2), mar = rep(1.5, 4)) 
+ 
+plot(points, main = 'K-Means clustering', col = as.factor(master.cluster), 
+     mai = c(0, 0, 0, 0), mar = c(0, 0, 0, 0), 
+     xaxt = 'n', yaxt = 'n', xlab = '', ylab = '') 
+plot(points, main = 'Hierarchical clustering', col = as.factor(slave.hierarchical), 
+     mai = c(0, 0, 0, 0), mar = c(0, 0, 0, 0),  
+     xaxt = 'n', yaxt = 'n', xlab = '', ylab = '') 
+plot(points, main = 'Density-based clustering', col = as.factor(slave.dbscan), 
+     mai = c(0, 0, 0, 0), mar = c(0, 0, 0, 0), 
+     xaxt = 'n', yaxt = 'n', xlab = '', ylab = '') 
+plot(points, main = 'Stacked clustering', col = as.factor(stacked.clustering), 
+     mai = c(0, 0, 0, 0), mar = c(0, 0, 0, 0), 
+     xaxt = 'n', yaxt = 'n', xlab = '', ylab = '') 
+par(previous.par) # recovering the original plot space parameters
+```
+
