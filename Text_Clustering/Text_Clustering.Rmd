@@ -86,8 +86,6 @@ The data frame is the main native class that people use to handle regular datase
 
 
 
-
-
 ```{r}
 # To get rid of these URLs, let’s use regex substitutions:
 sentences <- sub("http://([[:alnum:]|[:punct:]])+", '', dataframe$content)
@@ -133,6 +131,7 @@ tfidf.matrix <- as.matrix(tdm.tfidf)
 dist.matrix = proxy::dist(tfidf.matrix, method = "cosine")
 ```
 
+
 ```{r}
 # K-Means
 truth.K <- 16
@@ -177,5 +176,505 @@ plot(points, main = 'Stacked clustering', col = as.factor(stacked.clustering),
      mai = c(0, 0, 0, 0), mar = c(0, 0, 0, 0), 
      xaxt = 'n', yaxt = 'n', xlab = '', ylab = '') 
 par(previous.par) # recovering the original plot space parameters
+```
+Hard clustering: in hard clustering, each data object or point either belongs to a cluster completely or not. For example in the Uber dataset, each location belongs to either one borough or the other.
+
+
+```{r}
+
+## Need this line so qdap will load correctly (with java) when using knitr button. 
+library(qdap)
+library(dplyr)
+library(tm)
+library(wordcloud)
+library(plotrix)
+library(dendextend)
+library(ggplot2)
+library(ggthemes)
+library(RWeka)
+```
+
+```{r}
+# qdap is loaded
+
+# Print new_text to the console
+new_text <- "DataCamp is the first online learning platform that focuses on building the best learning experience specifically for Data Science. We have offices in Boston and Belgium and to date, we trained over 250,000 (aspiring) data scientists in over 150 countries. These data science enthusiasts completed more than 9 million exercises. You can take free beginner courses, or subscribe for $25/month to get access to all premium courses."
+
+# Find the 10 most frequent terms: term_count
+term_count <- freq_terms(new_text, 10)
+
+# Plot term_count
+plot(term_count)
+```
+
+```{r}
+# Import text data
+tweets <- read.csv('https://assets.datacamp.com/production/course_935/datasets/coffee.csv', stringsAsFactors = F)
+
+# View the structure of tweets
+glimpse(tweets)
+
+# Print out the number of rows in tweets
+nrow(tweets)
+
+# Isolate text from tweets: coffee_tweets
+coffee_tweets <- tweets$text
+head(coffee_tweets)
+```
+
+### Make the vector a VCorpus object (1)
+There are two kinds of the corpus data type, the permanent corpus, PCorpus, and the volatile corpus, VCorpus. In essence, the difference between the two has to do with how the collection of documents is stored in your computer. In this course, we will use the volatile corpus, which is held in your computer’s RAM rather than saved to disk, just to be more memory efficient.
+```{r}
+# the tm library is loaded
+
+# Make a vector source: coffee_source
+coffee_source <- VectorSource(coffee_tweets)
+```
+
+### Make the vector a VCorpus object (2)
+The VCorpus object is a nested list, or list of lists.
+At each index of the VCorpus object, there is a PlainTextDocument object, which is essentially a list that contains the actual text data (content), as well as some corresponding metadata (meta).
+```{r}
+# Make a volatile corpus: coffee_corpus
+coffee_corpus <- VCorpus(coffee_source)
+
+# Print out coffee_corpus
+coffee_corpus
+
+# Print data on the 15th tweet in coffee_corpus
+coffee_corpus[[15]]
+
+# Print the content of the 15th tweet in coffee_corpus
+coffee_corpus[[15]]$content
+```
+
+### Make a VCorpus from a data frame
+```{r}
+# Print example_text to the console
+example_text <- structure(list(num = 1:3, Author1 = c("Text mining is a great time.", 
+"Text analysis provides insights", "qdap and tm are used in text mining"
+), Author2 = c("R is a great language", "R has many uses", "DataCamp is cool!"
+)), .Names = c("num", "Author1", "Author2"), row.names = c(NA, 
+-3L), class = "data.frame")
+
+example_text
+```
+
+Simple word clustering
+– Distance matrix and dendrogram
+```{r}
+rain <- structure(list(city = structure(c(2L, 4L, 1L, 3L), .Label = c("Boston", 
+  "Cleveland", "New Orleans", "Portland"), class = "factor"), rainfall = c(39.14, 
+  39.14, 43.77, 62.45)), .Names = c("city", "rainfall"), row.names = c(NA, 
+  -4L), class = "data.frame")
+
+# Create dist_rain
+dist_rain <- dist(rain[ ,2])
+
+# View the distance matrix
+dist_rain
+
+# Create hc
+hc <- hclust(dist_rain)
+
+# Plot hc
+plot(hc, labels = rain$city)
+```
+
+
+```{r}
+# Import chardonnay tweet data
+chardonnay_tweets <- read.csv('https://assets.datacamp.com/production/course_935/datasets/chardonnay.csv', stringsAsFactors = F)
+
+head(chardonnay_tweets$text)
+```
+
+```{r}
+# Make a vector source
+chardonnay_source <- VectorSource(chardonnay_tweets$text)
+
+# Make a volatile corpus
+chardonnay_corpus <- VCorpus(chardonnay_source)
+
+# Clean the corpus
+clean_corpus <- function(corpus){
+  corpus <- tm_map(corpus, stripWhitespace)
+  corpus <- tm_map(corpus, removePunctuation)
+  corpus <- tm_map(corpus, content_transformer(tolower))
+  corpus <- tm_map(corpus, removeWords, stopwords("en"))
+  return(corpus)
+}
+
+chardonnay_clean_corp <- clean_corpus(chardonnay_corpus)
+
+# Convert TDM to matrix
+chardonnay_tdm <- TermDocumentMatrix(chardonnay_clean_corp)
+chardonnay_m <- as.matrix(chardonnay_tdm)
+
+# Sum rows and frequency data frame
+chardonnay_term_freq <- rowSums(chardonnay_m)
+
+head(chardonnay_term_freq)
+```
+
+```{r}
+chardonnay_word_freqs <- data.frame(
+  term = names(chardonnay_term_freq),
+  num = chardonnay_term_freq
+)
+
+head(chardonnay_word_freqs)
+```
+
+```{r}
+# The wordcloud package is loaded
+
+# Create a wordcloud for the values in word_freqs
+wordcloud(chardonnay_word_freqs$term, chardonnay_word_freqs$num,
+  max.words = 100, colors = "red")
+```
+
+### Stop words and word clouds
+```{r}
+# Add new stop words to clean_corpus()
+clean_corpus <- function(corpus){
+  corpus <- tm_map(corpus, removePunctuation)
+  corpus <- tm_map(corpus, stripWhitespace)
+  corpus <- tm_map(corpus, removeNumbers)
+  corpus <- tm_map(corpus, content_transformer(tolower))
+  corpus <- tm_map(corpus, removeWords, 
+    c(stopwords("en"), "amp", "chardonnay", "wine", "glass"))
+  return(corpus)
+}
+
+# Create clean_chardonnay
+chardonnay_clean_corp <- clean_corpus(chardonnay_corpus)
+
+# Create chardonnay_tdm
+chardonnay_tdm <- TermDocumentMatrix(chardonnay_clean_corp)
+
+# Create chardonnay_m
+chardonnay_m <- as.matrix(chardonnay_tdm)
+
+# Create chardonnay_words
+chardonnay_words <- rowSums(chardonnay_m)
+```
+
+```{r}
+# Sort the chardonnay_words in descending order
+chardonnay_words <- sort(chardonnay_words, decreasing = T)
+
+# Print the 6 most frequent chardonnay terms
+head(chardonnay_words)
+```
+
+```{r}
+# Print the dimensions of tweets_tdm
+dim(chardonnay_tdm)
+
+# Create tdm1
+tdm1 <- removeSparseTerms(chardonnay_tdm, sparse = 0.95)
+
+# Create tdm2
+tdm2 <- removeSparseTerms(chardonnay_tdm, sparse = 0.975)
+
+# Print tdm1
+print(tdm1)
+```
+*removeSparseTerms* A term-document matrix where those terms from x are removed which have at least a sparse percentage of empty (i.e., terms occurring 0 times in a document) elements. I.e., the resulting matrix contains only terms with a sparse factor of less than sparse.
+
+```{r}
+dim(tdm1)
+dim(tdm2)
+```
+
+### Text based dendrogram
+```{r}
+# Create tweets_tdm2
+chardonnay_tdm2 <- removeSparseTerms(chardonnay_tdm, sparse = 0.975)
+
+# Create tdm_m
+tdm_m <- as.matrix(chardonnay_tdm2)
+tdm_m[1:10, 1:20]
+```
+
+```{r}
+# Create tdm_df
+tdm_df <- as.data.frame(tdm_m)
+head(tdm_df[,1:20])
+```
+
+```{r}
+# Create chardonnay_dist
+chardonnay_dist <- dist(tdm_df)
+head(chardonnay_dist)
+```
+
+```{r}
+# Create hc
+hc <- hclust(chardonnay_dist)
+hc
+```
+
+```{r}
+# Plot the dendrogram
+plot(hc)
+```
+
+```{r}
+# dendextend library is loaded
+
+# Create hcd
+hcd <- as.dendrogram(hc)
+
+# Print the labels in hcd
+labels(hcd)
+
+# Change the branch color to red for "marvin" and "gaye"
+hcd <- branches_attr_by_labels(hcd, c("marvin", "gaye"), color = "red")
+
+# Plot hcd
+plot(hcd)
+
+# Add cluster rectangles 
+rect.dendrogram(hcd, k = 2, border = "grey50")
+```
+
+### Using word association
+```{r}
+clean_corp <- clean_corpus(coffee_corpus)
+coffee_dtm <- DocumentTermMatrix(clean_corp)
+coffee_m <- as.matrix(coffee_dtm)
+```
+
+### Make a term-document matrix
+```{r}
+# Create a TDM from clean_corp: coffee_tdm
+coffee_tdm <- TermDocumentMatrix(clean_corp)
+
+# Print coffee_tdm data
+coffee_tdm
+```
+The TDM is often the matrix used for language analysis.
+This is because you likely have more terms than authors or documents and life is generally easier when you have more rows than columns.
+An easy way to start analyzing the information is to change the matrix into a simple matrix using as.matrix() on the TDM.
+
+```{r}
+# Convert coffee_tdm to a matrix: coffee_m
+coffee_m <- as.matrix(coffee_tdm)
+
+# Print the dimensions of the matrix
+dim(coffee_m)
+
+# Review a portion of the matrix
+coffee_m[ 100:105, 14:16]
+```
+
+### Find common words
+```{r}
+# Combine both corpora: all_tweets
+all_coffee <- paste(coffee_tweets, collapse = "")
+all_chardonnay <- paste(chardonnay_tweets$text, collapse = "")
+all_tweets <- c(all_coffee, all_chardonnay)
+
+# clean all_tweets
+all_tweets <- VectorSource(all_tweets)
+all_corpus <- VCorpus(all_tweets)
+```
+
+### Visualize common words
+```{r}
+# Add new stop words to clean_corpus()
+clean_corpus <- function(corpus){
+  corpus <- tm_map(corpus, removePunctuation)
+  corpus <- tm_map(corpus, stripWhitespace)
+  corpus <- tm_map(corpus, removeNumbers)
+  corpus <- tm_map(corpus, content_transformer(tolower))
+  corpus <- tm_map(corpus, removeWords, 
+    c(stopwords("en"), "amp", "chardonnay", "wine", "glass", "coffee"))
+  return(corpus)
+}
+all_clean <- clean_corpus(all_corpus)
+all_tdm <- TermDocumentMatrix(all_clean)
+all_m <- as.matrix(all_tdm)
+
+# Make commonalitiy cloud
+commonality.cloud(all_m, 
+                  colors = "steelblue1",
+                  max.words = 100)
+```
+
+### Visualize dissimilar words
+```{r}
+# Clean the corpus
+all_clean <- clean_corpus(all_corpus)
+
+# Create all_tdm
+all_tdm <- TermDocumentMatrix(all_clean)
+
+# Give the columns distinct names
+colnames(all_tdm) <- c("coffee", "chardonnay")
+
+# Create all_m
+all_m <- as.matrix(all_tdm)
+
+# Create comparison cloud
+comparison.cloud(all_m,
+                 colors = c("orange", "blue"),
+                 max.words = 50)
+```
+
+### Polarized tag cloud
+```{r}
+# Identify terms shared by both documents
+common_words <- subset(
+  all_m,
+  all_m[, 1] > 0 & all_m[, 2] > 0
+)
+
+head(common_words)
+```
+The problem with the commonality.cloud is that it does not show you where the words show up proportonately. The pyramid.plot shows you both the common words and where there show up most
+
+```{r}
+# calc common words and difference
+difference <- abs(common_words[, 1] - common_words[, 2])
+common_words <- cbind(common_words, difference)
+common_words <- common_words[order(common_words[, 3],
+                                   decreasing = T), ]
+head(common_words)
+```
+
+```{r}
+top25_df <- data.frame(x = common_words[1:25, 1],
+                       y = common_words[1:25, 2],
+                       labels = rownames(common_words[1:25, ]))
+
+# The plotrix package has been loaded
+
+# Make pyramid plot
+pyramid.plot(top25_df$x, top25_df$y,
+             labels = top25_df$labels, 
+             main = "Words in Common",
+             gap = 18,
+             laxlab = NULL,
+             raxlab = NULL, 
+             unit = NULL,
+             top.labels = c("Coffee",
+                            "Words",
+                            "Chardonnay")
+             )
+```
+
+
+### Visualize word networks
+```{r}
+# Create word network
+word_associate(
+  coffee_tweets,
+  match.string = c("barista"),
+  stopwords = c(Top200Words, "coffee", "amp"),
+  network.plot = T,
+  cloud.colors = c("gray85", "darkred")
+  )
+
+# Add title
+title(main = "Barista Coffee Tweet Associations")
+```
+Another way to view word connections is to treat them as a network, similar to a social network.
+Word networks show term association and cohesion.
+A word of caution: these visuals can become very dense and hard to interpret visually.
+In a network graph, the circles are called nodes and represent individual terms, while the lines connecting the circles are called edges and represent the connections between the terms.
+
+### Using word association
+```{r}
+# Create associations
+associations <- findAssocs(coffee_tdm, "venti", 0.2)
+
+# View the venti associations
+associations
+```
+Another way to think about word relationships is with the findAssocs() function in the tm package.
+For any given word, *findAssocs()* calculates its correlation with every other word in a TDM or DTM.
+Scores range from 0 to 1. A score of 1 means that two words always appear together, while a score of 0 means that they never appear together.
+
+```{r}
+# Create associations_df
+associations_df <- list_vect2df(associations)[, 2:3]
+head(associations_df)
+```
+
+```{r}
+# Plot the associations_df values (don't change this)
+ggplot(associations_df, aes(y = associations_df[, 1])) + 
+  geom_point(aes(x = associations_df[, 2]), 
+             data = associations_df, size = 3) + 
+  ggtitle("Word Associations to 'Venti'") + 
+  theme_gdocs()
+```
+
+### Getting past single words
+Using bi, tri, and n-grams will make your TDM and DTM much larger
+```{r}
+coffee_source_small <- VectorSource(coffee_tweets[1:2])
+coffee_corpus_small <- VCorpus(coffee_source_small)
+
+# Make a unigram DTM on first 2 coffee tweets
+unigram_dtm <- DocumentTermMatrix(coffee_corpus_small)
+unigram_dtm
+```
+
+```{r}
+
+# Define bigram tokenizer
+tokenizer <- function(x) NGramTokenizer(x, Weka_control(min = 2, max = 2))
+
+# Make a bigram TDM
+bigram_tdm <- TermDocumentMatrix(
+  clean_corpus(coffee_corpus_small),
+  control = list(tokenize = tokenizer)
+)
+
+bigram_tdm
+```
+
+###  Changing n-grams
+```{r}
+# Make tokenizer function 
+tokenizer <- function(x)
+  NGramTokenizer(x, Weka_control(min = 2, max = 2))
+
+# Create unigram_dtm
+unigram_dtm <- DocumentTermMatrix(chardonnay_clean_corp)
+
+# Create bigram_dtm
+bigram_dtm <- DocumentTermMatrix(
+  chardonnay_clean_corp,
+  control = list(tokenize = tokenizer))
+
+# Examine unigram_dtm
+unigram_dtm
+```
+```{r}
+# Examine bigram_dtm
+bigram_dtm
+```
+
+
+```{r}
+# Create bigram_dtm_m
+bigram_dtm_m <- as.matrix(bigram_dtm)
+
+# Create freq
+freq <- colSums(bigram_dtm_m)
+
+# Create bi_words
+bi_words <- names(freq)
+
+# Examine part of bi_words
+bi_words[2577:2587]
+
+# Plot a wordcloud
+wordcloud(bi_words, freq, max.words = 15)
 ```
 
