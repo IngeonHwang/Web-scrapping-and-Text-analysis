@@ -1,0 +1,529 @@
+---
+title: "Information & Management SI"
+output:
+  html_document:
+    df_print: kable
+    number_sections: yes
+    theme: journal
+    toc: yes
+editor_options:
+  chunk_output_type: console
+---
+# Overview
+Data and Code for the special issue
+```{r dataloading, warning=FALSE,message=FALSE}
+rm(list=ls())
+
+library(dplyr)
+library(stm)
+library(anacor)
+library(stargazer)
+library(pscl)
+
+#Get the original texts
+load("review_text_english.rda")
+
+original <- df_english %>% select(reviewid,text) %>%
+   rename(original_text=text) %>%
+   distinct()
+rm(df_english)
+#Merge with the objects for the stm
+load("corpusallpython_lematized.rda")
+df_english <- df_english %>%
+   left_join(original)
+
+# View(df_english)
+rm(original)
+```
+
+# STM estimation of topics
+
+```{r loadcached}
+#Load cached objects of the stm estimation so
+#we don't need to run it again
+load("infoman2_si.rda")
+
+```
+
+## Data Preparation
+
+```{r datapreparation, eval=FALSE}
+df_english$documents <- df_english$text
+df_english$text <- NULL
+df_english$date_of_review <- as.Date(df_english$date_of_review,
+                                     format="%d %B %Y")
+# df_english$review_score <- ordered(df_english$review_score)
+
+datah <- df_english %>% select(reviewid,airline,airline_country,review_score,documents,
+                               reviewer_level_contr,
+                               cabin_class,date_of_review,route_distance,
+                               original_text) %>%
+   mutate(documents = as.character(documents)) %>%
+   na.omit()
+
+datah$datenum <- as.numeric(datah$date_of_review -
+                               min(datah$date_of_review))
+
+processed <- textProcessor(datah$documents,
+                           metadata = datah,
+                           customstopwords = c("flight","time",
+                                               "year","month","day"),
+                           stem = F)
+
+threshold <- round(1/100 * length(processed$documents),0)
+
+out <- prepDocuments(processed$documents,
+                     processed$vocab,
+                     processed$meta,
+                     lower.thresh = threshold)
+
+hist(datah$datenum)
+```
+
+## Run the model
+
+```{r stmrun, eval=FALSE}
+
+airlinesfit <- stm(documents = out$documents,
+                            vocab = out$vocab,
+                            # K = kappa,
+                            K = 20,
+                            # K = 0,
+                            # content = factor(out$meta$review_score),
+                            prevalence =~ review_score + cabin_class +
+                                        s(datenum) + route_distance,
+                            max.em.its = 75, data = out$meta,
+                            reportevery=3,
+                            # gamma.prior = "L1",
+                            sigma.prior = 0.7,
+                            init.type = "Spectral")
+```
+
+## Topic Labels
+
+```{r topiclabels, eval=T,message=F}
+topic_labels <- c("Business Class","Value for Money","Baggage Policy",
+                  "Low Cost","Legroom(Critique)","Delays","Staff(Praise)",
+                  "Premium Economy",
+                  "Staff(Critique)","Passenger Experience",
+                  "Frequent Flyer Status",
+                  "Mode of Travel",
+                  "Seating(Critique)",
+                  "Refund/Cancelation","Food/IFE",
+                  "Staff Assistance",
+                  "Legroom(Praise)","Checkin",
+                  "Airport Experience","Onboard Service")
+
+#Prepare a table to put the topic proportions in
+topic_summary <- summary(airlinesfit)
+topic_proportions <- colMeans(airlinesfit$theta)
+
+table_towrite_labels <- data.frame()
+for(i in 1:length(topic_summary$topicnums)){
+
+   row_here <- tibble(topicnum= topic_summary$topicnums[i],
+                      topic_label = topic_labels[i],
+                      proportion = 100*round(topic_proportions[i],4),
+                     frex_words = paste(topic_summary$frex[i,1:7],
+                                        collapse = ", "))
+   table_towrite_labels <- rbind(row_here,table_towrite_labels)
+}
+table_towrite_labels %>% arrange(topicnum)
+```
+
+## Plot STM solution
+```{r plotstm}
+plot(airlinesfit,custom.labels = topic_labels,main = "")
+```
+
+## Ploting
+
+## Estimate Effects
+```{r effectsestimate, eval=F}
+out$meta$cabin_class <- as.factor(out$meta$cabin_class)
+convergence <- as.data.frame(airlinesfit$theta)
+colnames(convergence) <- paste0("topic",1:20)
+
+effects <- estimateEffect(~review_score + cabin_class + route_distance +
+                             s(datenum) + factor(us_airline),
+                          stmobj = airlinesfit,
+                          metadata = out$meta )
+
+```
+
+## Plot the effects
+
+### Effect of Overall Score on Topic Prevalence
+
+```{r plotallwithrating}
+
+plot(effects, covariate = "review_score",
+     topics = c(1:20),
+     model = airlinesfit, method = "difference",
+     cov.value1 = "5", cov.value2 = "1",
+     xlab = "Low Rating ... High Rating",
+     xlim = c(-0.04,0.04),
+     main = "",
+     custom.labels = topic_labels,
+     labeltype = "custom")
+
+```
+
+
+### How topics change with time
+
+```{r plotallwithtime}
+
+monthseq <- seq(from=min(as.Date(out$meta$date_of_review,format="%B-%Y")),
+                to=max(as.Date(out$meta$date_of_review,format="%B-%Y")),
+                  by="month")
+
+topics_to_plot <- c(6,3,9,14,18,7)
+
+par(mfrow=c(2,3),
+    oma = c(5,4,0,0) + 0.1,
+    mar = c(2,0,2,0) + 0.1)
+
+for(i in topics_to_plot){
+
+   plot(effects, covariate = "datenum",
+        topics = c(i),
+        model = airlinesfit, method = "continuous",
+        xaxt='n',
+        yaxt='n',
+        # xlab="Date of Review",
+        main = topic_labels[i],
+        printlegend = F,
+        linecol = "black",
+        labeltype = "none")
+
+   axis(1,at=seq(from=1,
+                 to=length(unique(out$meta$date_of_review)),
+                 by=30),labels=monthseq)
+}
+
+```
+
+
+### How much extra information do they explain
+
+```{r informationgain}
+convergence <- as.data.frame(airlinesfit$theta)
+colnames(convergence) <- paste0("topic",1:20)
+
+
+
+for_regression <- cbind(out$meta,convergence)
+
+for_regression$cabin_class <- factor(for_regression$cabin_class,
+                                     levels=c("Economy",
+                                              "Premium Economy",
+                                              "Business Class",
+                                              "First Class"))
+
+# for_regression$route_distance <- scale(for_regression$route_distance)
+
+dimensions_rating <- df_english %>%
+   select(reviewid,flight_type,seat_comfort,
+          customer_service,cleanliness,
+          food_beverages,legroom,inflight_entertainment,
+          value_for_money,checkin_boarding,
+          num_reviews_5,num_reviews_4,num_reviews3,
+          num_reviews2,num_reviews1)
+
+for_regression <- for_regression %>%
+   dplyr::left_join(dimensions_rating)
+
+
+
+for_regression$documents <- NULL
+for_regression$route_distance <- scale(for_regression$route_distance)
+
+
+model1 <- MASS::polr(ordered(review_score)~seat_comfort+
+             customer_service+cleanliness+
+             food_beverages+legroom+inflight_entertainment+
+             value_for_money+checkin_boarding+factor(cabin_class)+
+             reviewer_level_contr+route_distance,
+             data=for_regression,Hess = T)
+
+model2 <- MASS::polr(ordered(review_score)~seat_comfort+
+             customer_service+cleanliness+
+             food_beverages+legroom+inflight_entertainment+
+             value_for_money+checkin_boarding+factor(cabin_class)+
+             reviewer_level_contr+route_distance+topic6,
+               data=for_regression,Hess = T)
+
+model3 <- MASS::polr(ordered(review_score)~seat_comfort+
+             customer_service+cleanliness+
+             food_beverages+legroom+inflight_entertainment+
+             value_for_money+checkin_boarding+factor(cabin_class)+
+             reviewer_level_contr+route_distance+topic6+topic14,
+               data=for_regression,Hess = T)
+
+model4 <- MASS::polr(ordered(review_score)~seat_comfort+
+             customer_service+cleanliness+
+             food_beverages+legroom+inflight_entertainment+
+             value_for_money+checkin_boarding+factor(cabin_class)+
+             reviewer_level_contr+route_distance+topic6+topic14+topic7,
+             data=for_regression,Hess = T)
+
+
+model1[4]
+
+r2m1 <- round(pR2(model1)[4],2)
+r2m2 <- round(pR2(model2)[4],2)
+r2m3 <- round(pR2(model3)[4],2)
+r2m4 <- round(pR2(model4)[4],2)
+
+
+# mm <- calc.relimp(model3,type="lmg")
+# barplot(mm$lmg)
+stargazer(model1,model2,model3,model4,type = "text",header = FALSE,
+          star.cutoffs = c(0.05,0.01,0.001),
+          add.lines=list(c("McFaden R2", r2m1,r2m2,r2m3,r2m4)))
+
+library(lmtest)
+lrtest(model1,model2,model3,model4)
+
+
+```
+
+
+
+### Topic Correlation
+```{r topiccorrelation}
+
+tocorr <- for_regression %>%
+   dplyr::select(seat_comfort,
+                 customer_service,cleanliness,
+                 food_beverages,legroom,inflight_entertainment,
+                 value_for_money,checkin_boarding,
+                 topic1:topic20) %>%
+   na.omit()
+
+colnames(tocorr) <- c("seat_comfort",
+                      "customer_service",
+                      "cleanliness",
+                      "food_beverages",
+                      "legroom",
+                      "inflight_entertainment",
+                      "value_for_money",
+                      "checkin_boarding",topic_labels)
+
+topic_cor <- topicCorr(airlinesfit,method = "simple")
+source("my_topic_corr.R")
+plot.topicCorr(topic_cor,vlabels = paste0(c(1:20),": ",topic_labels),vertex.color = "white",
+     vertex.label.dist=2,layout=igraph::layout.kamada.kawai,vertex.label.cex = 1.2)
+```
+
+# Perceptual Maps
+
+```{r perceptualmap}
+
+for_regression$airline[for_regression$airline=="Austrian Airlines"] <- "Austrian"
+for_regression$airline[for_regression$airline=="Vueling Airlines"] <- "Vueling"
+for_regression$airline[for_regression$airline=="Thomas Cook Airlines (UK)"] <- "Thomas Cook"
+for_regression$airline[for_regression$airline=="Thomson Airways"] <- "Thomson"
+for_regression$airline[for_regression$airline=="Turkish Airlines"] <- "Turkish"
+for_regression$airline[for_regression$airline=="KLM Royal Dutch Airlines"] <- "KLM"
+for_regression$airline[for_regression$airline=="Swiss International Air Lines"] <- "Swiss"
+for_regression$airline[for_regression$airline=="Jetstar Airways - Australia & New Zealand"] <- "Jetstar Airways"
+
+for_regression$route_distance <- NULL
+
+## Find the top 10 US airlines
+# us_top10 <- for_regression %>% filter(airline_country=="UNITED STATES") %>%
+# us_top10 <- for_regression %>%
+# us_top10 <- for_regression %>% filter(flight_type=="International") %>%
+airlines_to_filter_europe <- for_regression %>% filter(flight_type=="Europe") %>%
+   group_by(airline) %>%
+   summarise(total = n()) %>%
+   arrange(desc(total)) %>% top_n(30)
+
+airlines_to_filter_international <- for_regression %>%
+   filter(flight_type=="International") %>%
+   group_by(airline) %>%
+   summarise(total = n()) %>%
+   arrange(desc(total)) %>% top_n(30)
+
+perceptual_map_europe <- for_regression %>% filter(airline %in% airlines_to_filter_europe$airline)
+
+perceptual_map_international <- for_regression %>% filter(airline %in% airlines_to_filter_international$airline)
+
+
+#Shorten airline names for plot clarity
+
+#4,6,7,9,13,14,16,17
+toplot_europe <- perceptual_map_europe %>%
+   group_by(airline) %>%
+   dplyr::summarise(
+   avgrating = mean(review_score,na.rm = T),
+   mntopic1 = mean(topic1),mntopic2 = mean(topic2),
+   mntopic3 = mean(topic3),mntopic4 = mean(topic4),
+   mntopic5 = mean(topic5),mntopic6 = mean(topic6),
+   mntopic7 = mean(topic7),mntopic8 = mean(topic8),
+   mntopic9 = mean(topic9),mntopic10 = mean(topic10),
+   mntopic11 = mean(topic11),mntopic12 = mean(topic12),
+   mntopic13 = mean(topic13),mntopic14 = mean(topic14),
+   mntopic15 = mean(topic15),mntopic16 = mean(topic16),
+   mntopic17 = mean(topic17),mntopic18 = mean(topic18),
+   mntopic19 = mean(topic19),mntopics20 = mean(topic20)) %>%
+   select(airline,mntopic2,mntopic4,mntopic6,mntopic7,mntopic9,
+          mntopic13,mntopic14,mntopic17) %>% data.frame()
+
+toplot_international <- perceptual_map_international %>%
+   group_by(airline) %>% dplyr::summarise(
+   avgrating = mean(review_score,na.rm = T),
+   mntopic1 = mean(topic1),mntopic2 = mean(topic2),
+   mntopic3 = mean(topic3),mntopic4 = mean(topic4),
+   mntopic5 = mean(topic5),mntopic6 = mean(topic6),
+   mntopic7 = mean(topic7),mntopic8 = mean(topic8),
+   mntopic9 = mean(topic9),mntopic10 = mean(topic10),
+   mntopic11 = mean(topic11),mntopic12 = mean(topic12),
+   mntopic13 = mean(topic13),mntopic14 = mean(topic14),
+   mntopic15 = mean(topic15),mntopic16 = mean(topic16),
+   mntopic17 = mean(topic17),mntopic18 = mean(topic18),
+   mntopic19 = mean(topic19),mntopics20 = mean(topic20)) %>% select(airline,mntopic2,mntopic4,mntopic6,mntopic7,
+             mntopic9,mntopic13,mntopic14,mntopic17) %>% data.frame()
+
+#
+# toplot2 <- perceptual_map %>% group_by(airline) %>% dplyr::summarise(
+#    seating = mean(seat_comfort,na.rm=T),
+#    customerservice = mean(customer_service,na.rm=T),
+#    cleanliness = mean(cleanliness,na.rm=T),
+#    food_beverages = mean(food_beverages,na.rm=T),
+#    legroom = mean(legroom,na.rm=T),
+#    inflight_entertainment = mean(inflight_entertainment,na.rm=T),
+#    value_for_money = mean(value_for_money,na.rm=T),
+#    checkin_boarding = mean(checkin_boarding,na.rm=T))
+
+# toplot3 <- perceptual_map %>% group_by(review_score) %>%
+#     dplyr::summarise(
+#       mntopic1 = mean(topic1),
+#       mntopic2 = mean(topic2),
+#       mntopic3 = mean(topic3),
+#       mntopic4 = mean(topic4),
+#       mntopic5 = mean(topic5),
+#       mntopic6 = mean(topic6),
+#       mntopic7 = mean(topic7),
+#       mntopic8 = mean(topic8),
+#       mntopic9 = mean(topic9),
+#       mntopic10 = mean(topic10),
+#       mntopic11 = mean(topic11),
+#       mntopic12 = mean(topic12),
+#       mntopic13 = mean(topic13),
+#       mntopic14 = mean(topic14),
+#       mntopic15 = mean(topic15),
+#       mntopic16 = mean(topic16),
+#       mntopic17 = mean(topic17),
+#       mntopic18 = mean(topic18),
+#       mntopic19 = mean(topic19),
+#       mntopics20 = mean(topic20)
+#    ) %>% data.frame()
+#
+
+
+rownames(toplot_international) <- toplot_international$airline
+toplot_international$airline <- NULL
+
+rownames(toplot_europe) <- toplot_europe$airline
+toplot_europe$airline <- NULL
+
+# colnames(toplot) <- topic_labels
+colnames(toplot_international) <- topic_labels[c(2,4,6,7,9,13,14,17)]
+colnames(toplot_europe) <- topic_labels[c(2,4,6,7,9,13,14,17)]
+
+# colnames(toplot2) <- topic_labels[c(4,6,7,9,13,14,16,17)]
+
+
+ca_europe <- anacor(toplot_europe)
+ca_international <- anacor(toplot_international)
+
+
+plot(ca_europe,xlim=c(-0.4,0.4),
+     ylim= c(-0.25,0.25),
+     arrows = c(F,T))
+
+
+plot(ca_international, ylim= c(-0.1,0.1),
+     arrows = c(F,T))
+
+ca3 <- anacor(toplot3)
+plot(ca3, ylim= c(-0.1,0.1),
+     arrows = c(T,F))
+
+png(filename = "ca_europe.png",
+    width=24.19,
+    height=22.86,
+    units = "cm",res = 300)
+
+plot(ca_europe,xlim=c(-0.4,0.4),
+     ylim= c(-0.25,0.25),
+     main = "",
+     asp = 1.00,
+     xlab = "Dimension 1 (60.7%)",
+     ylab = "Dimension 2 (22.3%)",
+     arrows = c(F,T))
+dev.off()
+
+png(filename = "ca_international.png",
+    width=24.19,
+    height=22.86,
+    units = "cm",res = 300)
+
+plot(ca_international,
+     xlim=c(-0.33,0.33),
+     ylim= c(-0.22,0.14),
+     main = "",
+     asp = 0.94,
+     xlab = "Dimension 1 (68.8%)",
+     ylab = "Dimension 2 (14.8%)",
+     arrows = c(F,T))
+dev.off()
+
+
+# ca_international
+```
+
+## Redoing the plots with ggplot
+
+```{r ggplotanacor}
+
+library(ggplot2)
+ggplotanacor <- function(ca_object = anacorobject){
+
+      df <- data.frame(dim1 = c(ca_object$col.scores[,1],
+                                ca_object$row.scores[,1]),
+      dim2 = c(ca_object$col.scores[,2],
+               ca_object$row.scores[,2]),
+      type=c(rep(1,length(ca_object$col.scores[,1])),
+             rep(2,length(ca_object$row.scores[,1]))))
+
+      proportion_x_label <- paste0("Dimension 1 (",round(100*ca_object$chisq.decomp[1,2],0),"%)")
+      proportion_y_label <- paste0("Dimension 2 (",round(100*ca_object$chisq.decomp[2,2],0),"%)")
+
+
+      q1 <- qplot(dim1,dim2,data=df,colour=factor(type),xlab=proportion_x_label,ylab=proportion_y_label) +ggrepel::geom_text_repel(aes(label=rownames(df)),size=3.5)+theme(line = element_blank(),panel.background = element_rect(fill = 'white', colour = 'black'),legend.position="none")+geom_vline(xintercept = 0,linetype="dotted")+geom_hline(yintercept = 0,linetype="dotted")+geom_segment(data = subset(df,type==1), aes(x = 0, xend = dim1, y = 0, yend = dim2, label = rownames(subset(df,type==1))), color = "red",linetype="dashed",arrow = arrow(length=unit(0.30,"cm"), ends="last", type = "closed"))+scale_color_manual(values=c("dark grey", "black"))
+
+      return(q1)
+
+}
+
+
+
+ca_europe <- anacor(toplot_europe)
+ca_international <- anacor(toplot_international)
+
+plot_europe <- ggplotanacor(ca_europe)
+plot_international <-  ggplotanacor(ca_international) + scale_y_reverse()+scale_x_reverse()
+
+
+```
+
+```{r plothem}
+plot_europe
+plot_international
+```
+
+
