@@ -1,12 +1,5 @@
 ---
-title: "Information & Management SI"
-output:
-  html_document:
-    df_print: kable
-    number_sections: yes
-    theme: journal
-    toc: yes
-editor_options:
+title: "TOPIC MODELING_ Information & Management SI"
   chunk_output_type: console
 ---
 # Overview
@@ -290,7 +283,6 @@ lrtest(model1,model2,model3,model4)
 ```
 
 
-
 ### Topic Correlation
 ```{r topiccorrelation}
 
@@ -511,7 +503,6 @@ ggplotanacor <- function(ca_object = anacorobject){
 }
 
 
-
 ca_europe <- anacor(toplot_europe)
 ca_international <- anacor(toplot_international)
 
@@ -520,6 +511,7 @@ plot_international <-  ggplotanacor(ca_international) + scale_y_reverse()+scale_
 
 
 ```
+
 
 ```{r plothem}
 plot_europe
