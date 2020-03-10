@@ -1,7 +1,5 @@
 ---
 title: "Text_Clustering"
-author: "extract_text_from_pdf"
-date: "19/02/2020"
 output: html_document
 ---
 
@@ -659,7 +657,6 @@ unigram_dtm
 # Examine bigram_dtm
 bigram_dtm
 ```
-
 
 ```{r}
 # Create bigram_dtm_m
