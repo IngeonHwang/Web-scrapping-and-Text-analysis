@@ -515,11 +515,6 @@ When it comes to logistic regression
  simple regrssion -> y = c + a*x + e
  
  
- 
  *reduce the size of document as small as possible* 
 Dimension reduction is an important step in text mining. Dimension reduction improves the performance of clustering techniques by reducing dimensions so that text mining procedures process data with a reduced number of terms.
-
-
-
- 
  
